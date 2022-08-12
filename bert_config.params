@@ -1,0 +1,18 @@
+{
+    "main_parameters":{
+        "mode" : "train",
+        "data_dir": "./data/bbc-text.csv",
+        "document_column": "text",
+        "label_column": "category"
+    },
+    "train_parameters":{
+        "epochs" : 4,
+        "batch_size": 32,
+        "test_size": 0.2,
+        "random_seed": 1004,
+        "max_len": 128,
+        "pretrained_version": "bert-base-uncased",
+        "learning_rate": 5e-5,
+        "adam_epsilon": 1e-8
+    }
+}
