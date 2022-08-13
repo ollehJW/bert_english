@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 import json
 import random
 import time
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+from functools import reduce
 
 from utils import (get_data, 
                    label_summary,
@@ -19,7 +22,9 @@ from utils import (get_data,
                    make_tokenizer,
                    BertModel,
                    flat_accuracy,
-                   format_time)
+                   format_time,
+                   plot_training_curves,
+                   plot_confusion_matrix)
 
 class BertTrainer(object):
     def __init__(self, cfg_path) -> None:
@@ -113,6 +118,7 @@ class BertTrainer(object):
 
         # Measure the total training time for the whole run.
         total_t0 = time.time()
+        best_accuracy = 0
 
         # For each epoch...
         for epoch_i in range(0, self.config['train_parameters']['epochs']):
@@ -303,19 +309,68 @@ class BertTrainer(object):
                 }
             )
 
+            if best_accuracy < avg_val_accuracy:
+                print("Best model is updated. Val acc:{}".format(avg_val_accuracy))
+                best_accuracy = avg_val_accuracy
+                torch.save(self.model, './best_model/best_model.pt')
+            
+
         print("")
         print("Training complete!")
 
         print("Total training took {:} (h:mm:ss)".format(format_time(time.time()-total_t0)))
 
+        ## Save Training Logs
+        df_stats = pd.DataFrame(data=training_stats) 
+        df_stats.to_csv('./best_model/training_logs.csv', index = False)
 
+        ## Plot Training Curves
+        plot_training_curves(df_stats, epochs = self.config['train_parameters']['epochs'])
 
+        ## Plot Confusion Matrix on best model.
+        self.model = torch.load('./best_model/best_model.pt')
+        self.model.eval()
+
+        # Tracking variables 
+        predictions , true_labels = [], []
+        for batch in self.valid_dataloader:
+            # Add batch to GPU
+            batch = tuple(t.to(device) for t in batch)
+  
+            # Unpack the inputs from our dataloader
+            b_input_ids, b_input_mask, b_labels = batch
+  
+            # Telling the model not to compute or store gradients, saving memory and 
+            # speeding up prediction
+            with torch.no_grad():
+                # Forward pass, calculate logit predictions
+                outputs = self.model(b_input_ids, token_type_ids=None, 
+                                     attention_mask=b_input_mask)
+
+            logits = outputs[0]
+
+            # Move logits and labels to CPU
+            logits = logits.detach().cpu().numpy()
+            label_ids = b_labels.to('cpu').numpy()
+  
+            # Store predictions and true labels
+            predictions.append(logits)
+            true_labels.append(label_ids)
+
+        scores = reduce(lambda x,y: x+y,[list(map(np.argmax,p)) for p in predictions])
+        labels = reduce(lambda x,y: list(x) + list(y), true_labels)
+        sns.set(font_scale=1)
+        sns.set(style='white')
+        cm = confusion_matrix(labels,scores)
+        plot_confusion_matrix(cm           = cm, 
+                              normalize    = True,
+                              target_names = self.label_encoder.classes_,
+                              title        = "Confusion Matrix, Normalized")
 
 
 
 if __name__ == "__main__":
     sc = BertTrainer("./bert_config.params")
-    x = 1
 
 
 
